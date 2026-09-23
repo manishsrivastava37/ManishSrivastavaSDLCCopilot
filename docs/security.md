@@ -15,4 +15,6 @@ Protect borrower and financial workflow data from unauthorized tenant access, pr
 - Generic client errors; detailed diagnostics only in protected server telemetry.
 
 ## Demo versus production
-Development identity and local database settings are non-production only. Production configuration must come from environment/secret management, must fail closed when required settings are absent, and must disable seeded demo identities/data.
+Development identity and local database settings are non-production only. The current development API uses the explicit `X-Demo-User`, `X-Demo-Tenant`, and `X-Demo-Roles` headers to exercise the authorization boundary; these headers are not an authentication mechanism and must be disabled outside Development. Production configuration must use OIDC/OAuth2 bearer validation from environment/secret management, fail closed when required settings are absent, and disable seeded demo identities/data.
+
+All API routes except liveness require an authenticated principal. Development routes filter applications by the tenant claim and reject cross-tenant application, workspace, collateral, and document access. The API still accepts identity fields in development request DTOs for compatibility, but production commands must derive actor, owner, verifier, and approver identities from authenticated claims.

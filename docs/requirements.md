@@ -35,6 +35,7 @@ A production-oriented workflow platform for commercial lending teams supporting 
 - SQL Server is the target relational database; local development may use an in-memory/test provider only for tests.
 - File binaries are stored in object storage, not in SQL; this first slice stores document metadata only.
 - Credit recommendations are advisory calculations/rules and never auto-approve, decline, or bind a human approver.
+- Second-level credit verification is required when `RequestedAmount > 25000` and `Currency == INR`; the exact boundary is intentionally strict greater-than, and non-INR applications do not use an unapproved direct numeric comparison.
 - Demo configuration is clearly separated from production configuration and must not be used for real data.
 
 ## Out of scope for the initial release

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 
 public sealed record CreditRecommendation(Guid Id, Guid ApplicationId, string Recommendation, string Rationale, IReadOnlyCollection<string> Factors, string AnalystId, DateTimeOffset CreatedAt);
 public sealed record CreditDecision(Guid Id, Guid ApplicationId, string Decision, string Rationale, string ApproverId, DateTimeOffset DecidedAt);
+public sealed record SecondLevelCreditVerification(Guid Id, Guid ApplicationId, string Outcome, string Rationale, string VerifierId, DateTimeOffset VerifiedAt);
 public sealed record Collateral(Guid Id, Guid ApplicationId, string Type, string Description, decimal Value, string Currency, string Status, DateTimeOffset CreatedAt);
 public sealed record DocumentRecord(Guid Id, Guid ApplicationId, string Category, string FileName, string VerificationStatus, string? Findings, DateTimeOffset UploadedAt);
 public sealed record WorkflowTask(Guid Id, Guid ApplicationId, string TaskType, string AssigneeId, string Status, DateTimeOffset DueAt);
@@ -11,6 +12,7 @@ public sealed class WorkflowFeatureStore
     private readonly LoanApplicationStore applications;
     private readonly ConcurrentDictionary<Guid, CreditRecommendation> recommendations = new();
     private readonly ConcurrentDictionary<Guid, CreditDecision> decisions = new();
+    private readonly ConcurrentDictionary<Guid, SecondLevelCreditVerification> verifications = new();
     private readonly ConcurrentDictionary<Guid, Collateral> collateral = new();
     private readonly ConcurrentDictionary<Guid, DocumentRecord> documents = new();
     private readonly ConcurrentDictionary<Guid, WorkflowTask> tasks = new();
@@ -18,7 +20,7 @@ public sealed class WorkflowFeatureStore
     public WorkflowFeatureStore(LoanApplicationStore applications)
     {
         this.applications = applications;
-        var seeded = applications.Add(new CreateApplicationRequest("tenant-demo", "Northstar Industrial Supply (Demo)", 875000m, "USD", "Warehouse expansion", "rm-demo"));
+        var seeded = applications.Add(new CreateApplicationRequest("tenant-demo", "Northstar Industrial Supply (Demo)", 875000m, "INR", "Warehouse expansion", "rm-demo"));
         tasks[Guid.NewGuid()] = new WorkflowTask(Guid.NewGuid(), seeded.Id, "Initial Review", "ops-demo", "Open", DateTimeOffset.UtcNow.AddDays(2));
         documents[Guid.NewGuid()] = new DocumentRecord(Guid.NewGuid(), seeded.Id, "Financial Statements", "northstar-fy2025.pdf", "Verified", null, DateTimeOffset.UtcNow.AddDays(-2));
         collateral[Guid.NewGuid()] = new Collateral(Guid.NewGuid(), seeded.Id, "Real Estate", "Demo warehouse property", 1250000m, "USD", "Under Review", DateTimeOffset.UtcNow.AddDays(-1));
@@ -26,10 +28,15 @@ public sealed class WorkflowFeatureStore
 
     public IReadOnlyCollection<CreditRecommendation> Recommendations(Guid applicationId) => recommendations.Values.Where(item => item.ApplicationId == applicationId).ToArray();
     public IReadOnlyCollection<CreditDecision> Decisions(Guid applicationId) => decisions.Values.Where(item => item.ApplicationId == applicationId).ToArray();
+    public IReadOnlyCollection<SecondLevelCreditVerification> Verifications(Guid applicationId) => verifications.Values.Where(item => item.ApplicationId == applicationId).ToArray();
     public IReadOnlyCollection<Collateral> Collateral(Guid applicationId) => collateral.Values.Where(item => item.ApplicationId == applicationId).ToArray();
     public IReadOnlyCollection<DocumentRecord> Documents(Guid applicationId) => documents.Values.Where(item => item.ApplicationId == applicationId).ToArray();
     public IReadOnlyCollection<WorkflowTask> Tasks(Guid applicationId) => tasks.Values.Where(item => item.ApplicationId == applicationId).ToArray();
     public bool HasDecision(Guid applicationId, string decision) => decisions.Values.Any(item => item.ApplicationId == applicationId && item.Decision.Equals(decision, StringComparison.OrdinalIgnoreCase));
+    public bool RequiresSecondLevelVerification(Guid applicationId) => applications.Get(applicationId) is { Currency: "INR", RequestedAmount: > 25000m };
+    public bool HasSecondLevelVerification(Guid applicationId) => verifications.Values.Any(item => item.ApplicationId == applicationId && item.Outcome.Equals("Verified", StringComparison.OrdinalIgnoreCase));
+    public bool IsCollateralInTenant(Guid id, string? tenantId) => collateral.TryGetValue(id, out var item) && applications.Get(item.ApplicationId)?.TenantId == tenantId;
+    public bool IsDocumentInTenant(Guid id, string? tenantId) => documents.TryGetValue(id, out var item) && applications.Get(item.ApplicationId)?.TenantId == tenantId;
 
     public (CreditRecommendation? Item, string? Error) AddRecommendation(Guid applicationId, string recommendation, string rationale, IReadOnlyCollection<string> factors, string analystId)
     {
@@ -53,6 +60,20 @@ public sealed class WorkflowFeatureStore
         if (recommendation.AnalystId.Equals(approverId, StringComparison.OrdinalIgnoreCase)) return (null, "The recommendation author cannot make the approval decision.");
         var item = new CreditDecision(Guid.NewGuid(), applicationId, decision, rationale, approverId, DateTimeOffset.UtcNow);
         decisions[item.Id] = item;
+        return (item, null);
+    }
+
+    public (SecondLevelCreditVerification? Item, string? Error) AddSecondLevelVerification(Guid applicationId, string outcome, string rationale, string verifierId)
+    {
+        var application = applications.Get(applicationId);
+        if (application is null) return (null, "Application not found.");
+        if (!RequiresSecondLevelVerification(applicationId)) return (null, "This application does not require second-level verification.");
+        if (!outcome.Equals("Verified", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(rationale) || string.IsNullOrWhiteSpace(verifierId)) return (null, "Verification outcome, rationale, and verifier are required.");
+        var recommendation = recommendations.Values.Where(item => item.ApplicationId == applicationId).OrderByDescending(item => item.CreatedAt).FirstOrDefault();
+        if (recommendation is null) return (null, "A current credit recommendation is required before verification.");
+        if (recommendation.AnalystId.Equals(verifierId, StringComparison.OrdinalIgnoreCase)) return (null, "The recommendation author cannot perform second-level verification.");
+        var item = new SecondLevelCreditVerification(Guid.NewGuid(), applicationId, "Verified", rationale, verifierId, DateTimeOffset.UtcNow);
+        verifications[item.Id] = item;
         return (item, null);
     }
 
@@ -102,6 +123,7 @@ public sealed class WorkflowFeatureStore
 
 public sealed record RecommendationRequest(string Recommendation, string Rationale, string[] Factors, string AnalystId);
 public sealed record DecisionRequest(string Decision, string Rationale, string ApproverId);
+public sealed record SecondLevelVerificationRequest(string Outcome, string Rationale, string VerifierId);
 public sealed record CollateralRequest(string Type, string Description, decimal Value, string Currency);
 public sealed record DocumentRequest(string Category, string FileName);
 public sealed record CollateralStatusRequest(string Status);

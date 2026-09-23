@@ -22,9 +22,9 @@ public sealed class LoanApplicationStore
         return application;
     }
 
-    public LoanApplication? Update(LoanApplication application, string actorId)
+    public LoanApplication? Update(LoanApplication application, LoanApplication expected, string actorId)
     {
-        if (!applications.TryUpdate(application.Id, application, applications.GetValueOrDefault(application.Id)!)) return null;
+        if (!applications.TryUpdate(application.Id, application, expected)) return null;
         auditEvents.Enqueue(new AuditEvent(Guid.NewGuid(), application.TenantId, actorId, "ApplicationTransitioned", application.Id, application.UpdatedAt));
         return application;
     }
@@ -51,8 +51,10 @@ public sealed class LoanApplicationService(LoanApplicationStore store, WorkflowF
         if (current is null) return (null, "Application not found.");
         if (string.IsNullOrWhiteSpace(request.ActorId) || string.IsNullOrWhiteSpace(request.Reason)) return (null, "Actor and reason are required.");
         if (!AllowedTransitions.TryGetValue(current.Status, out var targets) || !targets.Contains(request.TargetStatus, StringComparer.OrdinalIgnoreCase)) return (null, "The requested lifecycle transition is not allowed.");
+        if (request.TargetStatus.Equals("PendingApproval", StringComparison.OrdinalIgnoreCase) && features.RequiresSecondLevelVerification(id) && !features.HasSecondLevelVerification(id)) return (null, "Second-level credit verification is required before approval submission.");
         if ((request.TargetStatus.Equals("Approved", StringComparison.OrdinalIgnoreCase) || request.TargetStatus.Equals("Declined", StringComparison.OrdinalIgnoreCase)) && !features.HasDecision(id, request.TargetStatus)) return (null, "A recorded human credit decision is required before this transition.");
         var updated = current with { Status = request.TargetStatus, UpdatedAt = DateTimeOffset.UtcNow };
-        return (store.Update(updated, request.ActorId), null);
+        var saved = store.Update(updated, current, request.ActorId);
+        return saved is null ? (null, "Application was modified concurrently.") : (saved, null);
     }
 }

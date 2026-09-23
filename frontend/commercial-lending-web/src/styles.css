@@ -13,3 +13,5 @@ textarea { min-height: 74px; resize: vertical; }
 .link-button { padding: 0; background: transparent; color: #8e3823; text-decoration: underline; }
 .link-button:hover { background: transparent; color: #b44d2e; }
 @media (max-width: 780px) { .workspace-grid { grid-template-columns: 1fr; } }
+.approval-gate { display: flex; align-items: center; gap: 16px; margin-top: 18px; }
+button:disabled { background: #9cad9f; cursor: not-allowed; }

@@ -85,4 +85,59 @@ public class UnitTest1
 
         Assert.Equal("The requested collateral transition is not allowed.", result.Error);
     }
+
+    [Fact]
+    public void ConcurrentApplicationUpdateReturnsConflictResult()
+    {
+        var applications = new LoanApplicationStore();
+        var application = applications.Add(new CreateApplicationRequest("tenant-demo", "Synthetic Borrower", 125000m, "USD", "Equipment", "rm-demo"));
+        var staleSnapshot = applications.Get(application.Id)!;
+        var firstUpdate = applications.Update(application with { Status = "Analysis" }, staleSnapshot, "rm-demo");
+        var secondUpdate = applications.Update(application with { Status = "Declined" }, staleSnapshot, "rm-demo");
+
+        Assert.NotNull(firstUpdate);
+        Assert.Null(secondUpdate);
+    }
+
+    [Fact]
+    public void INRAmountAboveThresholdCannotEnterApprovalWithoutSecondLevelVerification()
+    {
+        var applications = new LoanApplicationStore();
+        var application = applications.Add(new CreateApplicationRequest("tenant-demo", "Synthetic Borrower", 25000.01m, "INR", "Equipment", "rm-demo"));
+        var features = new WorkflowFeatureStore(applications);
+        var service = new LoanApplicationService(applications, features);
+        service.Transition(application.Id, new TransitionRequest("Analysis", "Begin analysis", "analyst-demo"));
+        features.AddRecommendation(application.Id, "Approve", "Stable repayment capacity", ["Positive cash flow"], "analyst-demo");
+
+        var result = service.Transition(application.Id, new TransitionRequest("PendingApproval", "Submit for approval", "analyst-demo"));
+
+        Assert.Equal("Second-level credit verification is required before approval submission.", result.Error);
+    }
+
+    [Fact]
+    public void ThresholdBoundaryAndNonINRCurrencyDoNotRequireSecondLevelVerification()
+    {
+        var applications = new LoanApplicationStore();
+        var features = new WorkflowFeatureStore(applications);
+        var service = new LoanApplicationService(applications, features);
+        var boundary = applications.Add(new CreateApplicationRequest("tenant-demo", "Boundary Borrower", 25000m, "INR", "Equipment", "rm-demo"));
+        var foreign = applications.Add(new CreateApplicationRequest("tenant-demo", "Foreign Borrower", 100000m, "USD", "Equipment", "rm-demo"));
+
+        Assert.False(features.RequiresSecondLevelVerification(boundary.Id));
+        Assert.False(features.RequiresSecondLevelVerification(foreign.Id));
+    }
+
+    [Fact]
+    public void SecondLevelVerificationRequiresSeparateVerifierAndRecommendation()
+    {
+        var applications = new LoanApplicationStore();
+        var application = applications.Add(new CreateApplicationRequest("tenant-demo", "Synthetic Borrower", 30000m, "INR", "Equipment", "rm-demo"));
+        var features = new WorkflowFeatureStore(applications);
+        var missing = features.AddSecondLevelVerification(application.Id, "Verified", "Reviewed", "reviewer-demo");
+        features.AddRecommendation(application.Id, "Approve", "Strong repayment", ["Positive cash flow"], "reviewer-demo");
+        var sameMaker = features.AddSecondLevelVerification(application.Id, "Verified", "Reviewed", "reviewer-demo");
+
+        Assert.Equal("A current credit recommendation is required before verification.", missing.Error);
+        Assert.Equal("The recommendation author cannot perform second-level verification.", sameMaker.Error);
+    }
 }
