@@ -1,0 +1,16 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: Y
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in your environment}
+    ports: ["1433:1433"]
+    volumes: ["sqlserver-data:/var/opt/mssql"]
+  api:
+    build: ./src/LoanOps.Api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__SqlServer: ${ConnectionStrings__SqlServer}
+    depends_on: [sqlserver]
+volumes:
+  sqlserver-data:
