@@ -30,7 +30,7 @@ public sealed class LoanApplicationStore
     }
 }
 
-public sealed class LoanApplicationService(LoanApplicationStore store)
+public sealed class LoanApplicationService(LoanApplicationStore store, WorkflowFeatureStore features)
 {
     private static readonly IReadOnlyDictionary<string, string[]> AllowedTransitions = new Dictionary<string, string[]>
     {
@@ -51,6 +51,7 @@ public sealed class LoanApplicationService(LoanApplicationStore store)
         if (current is null) return (null, "Application not found.");
         if (string.IsNullOrWhiteSpace(request.ActorId) || string.IsNullOrWhiteSpace(request.Reason)) return (null, "Actor and reason are required.");
         if (!AllowedTransitions.TryGetValue(current.Status, out var targets) || !targets.Contains(request.TargetStatus, StringComparer.OrdinalIgnoreCase)) return (null, "The requested lifecycle transition is not allowed.");
+        if ((request.TargetStatus.Equals("Approved", StringComparison.OrdinalIgnoreCase) || request.TargetStatus.Equals("Declined", StringComparison.OrdinalIgnoreCase)) && !features.HasDecision(id, request.TargetStatus)) return (null, "A recorded human credit decision is required before this transition.");
         var updated = current with { Status = request.TargetStatus, UpdatedAt = DateTimeOffset.UtcNow };
         return (store.Update(updated, request.ActorId), null);
     }

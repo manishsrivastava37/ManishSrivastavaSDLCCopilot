@@ -41,12 +41,38 @@ app.MapGet("/api/v1/applications/{id:guid}/workspace", (Guid id, LoanApplication
     return Results.Ok(new { recommendations = features.Recommendations(id), decisions = features.Decisions(id), collateral = features.Collateral(id), documents = features.Documents(id), tasks = features.Tasks(id) });
 });
 app.MapPost("/api/v1/applications/{id:guid}/recommendations", (Guid id, RecommendationRequest request, LoanApplicationStore applications, WorkflowFeatureStore features) =>
-    applications.Get(id) is null ? Results.NotFound(new { error = "Application not found." }) : Results.Created($"/api/v1/applications/{id}/recommendations", features.AddRecommendation(id, request.Recommendation, request.Rationale, request.AnalystId)));
+{
+    if (applications.Get(id) is null) return Results.NotFound(new { error = "Application not found." });
+    var result = features.AddRecommendation(id, request.Recommendation, request.Rationale, request.Factors, request.AnalystId);
+    return result.Error is null ? Results.Created($"/api/v1/applications/{id}/recommendations", result.Item) : Results.BadRequest(new { error = result.Error });
+});
 app.MapPost("/api/v1/applications/{id:guid}/decisions", (Guid id, DecisionRequest request, LoanApplicationStore applications, WorkflowFeatureStore features) =>
-    applications.Get(id) is null ? Results.NotFound(new { error = "Application not found." }) : Results.Created($"/api/v1/applications/{id}/decisions", features.AddDecision(id, request.Decision, request.Rationale, request.ApproverId)));
+{
+    if (applications.Get(id) is null) return Results.NotFound(new { error = "Application not found." });
+    var result = features.AddDecision(id, request.Decision, request.Rationale, request.ApproverId);
+    return result.Error is null ? Results.Created($"/api/v1/applications/{id}/decisions", result.Item) : Results.BadRequest(new { error = result.Error });
+});
 app.MapPost("/api/v1/applications/{id:guid}/collateral", (Guid id, CollateralRequest request, LoanApplicationStore applications, WorkflowFeatureStore features) =>
-    applications.Get(id) is null ? Results.NotFound(new { error = "Application not found." }) : Results.Created($"/api/v1/applications/{id}/collateral", features.AddCollateral(id, request.Type, request.Description, request.Value, request.Currency)));
+{
+    if (applications.Get(id) is null) return Results.NotFound(new { error = "Application not found." });
+    var result = features.AddCollateral(id, request.Type, request.Description, request.Value, request.Currency);
+    return result.Error is null ? Results.Created($"/api/v1/applications/{id}/collateral", result.Item) : Results.BadRequest(new { error = result.Error });
+});
 app.MapPost("/api/v1/applications/{id:guid}/documents", (Guid id, DocumentRequest request, LoanApplicationStore applications, WorkflowFeatureStore features) =>
-    applications.Get(id) is null ? Results.NotFound(new { error = "Application not found." }) : Results.Created($"/api/v1/applications/{id}/documents", features.AddDocument(id, request.Category, request.FileName)));
+{
+    if (applications.Get(id) is null) return Results.NotFound(new { error = "Application not found." });
+    var result = features.AddDocument(id, request.Category, request.FileName);
+    return result.Error is null ? Results.Created($"/api/v1/applications/{id}/documents", result.Item) : Results.BadRequest(new { error = result.Error });
+});
+app.MapPost("/api/v1/collateral/{id:guid}/status", (Guid id, CollateralStatusRequest request, WorkflowFeatureStore features) =>
+{
+    var result = features.UpdateCollateral(id, request.Status);
+    return result.Error is null ? Results.Ok(result.Item) : Results.BadRequest(new { error = result.Error });
+});
+app.MapPost("/api/v1/documents/{id:guid}/verification", (Guid id, DocumentVerificationRequest request, WorkflowFeatureStore features) =>
+{
+    var result = features.VerifyDocument(id, request.VerificationStatus, request.ReviewerId, request.Findings);
+    return result.Error is null ? Results.Ok(result.Item) : Results.BadRequest(new { error = result.Error });
+});
 
 app.Run();
