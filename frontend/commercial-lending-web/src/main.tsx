@@ -4,7 +4,17 @@ import './styles.css';
 
 type Application = { id: string; applicationNumber: string; borrowerLegalName: string; requestedAmount: number; currency: string; status: string; ownerId: string; };
 type Workspace = { recommendations: { recommendation: string; rationale: string; factors: string[]; analystId: string }[]; decisions: { decision: string; rationale: string; approverId: string }[]; verifications: { outcome: string; rationale: string; verifierId: string }[]; requiresSecondLevelVerification: boolean; collateral: { id: string; type: string; description: string; value: number; currency: string; status: string }[]; documents: { id: string; category: string; fileName: string; verificationStatus: string; findings?: string }[]; tasks: { taskType: string; status: string; assigneeId: string }[] };
-const apiFetch = (input: RequestInfo | URL, init: RequestInit = {}) => fetch(input, { ...init, headers: { 'X-Demo-User': 'rm-demo', 'X-Demo-Tenant': 'tenant-demo', 'X-Demo-Roles': 'RelationshipManager,CreditAnalyst,CreditApprover,CollateralSpecialist,DocumentVerificationAnalyst', ...init.headers } });
+const apiFetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
+  let demoUser = 'rm-demo';
+  if (typeof init.body === 'string') {
+    try {
+      const payload = JSON.parse(init.body) as Record<string, unknown>;
+      const actor = payload.ownerId ?? payload.actorId ?? payload.analystId ?? payload.approverId ?? payload.verifierId ?? payload.reviewerId;
+      if (typeof actor === 'string' && actor.trim()) demoUser = actor;
+    } catch { /* Non-JSON requests retain the default demo identity. */ }
+  }
+  return fetch(input, { ...init, headers: { 'X-Demo-User': demoUser, 'X-Demo-Tenant': 'tenant-demo', 'X-Demo-Roles': 'RelationshipManager,CreditAnalyst,CreditApprover,CollateralSpecialist,DocumentVerificationAnalyst,CreditVerifier', ...init.headers } });
+};
 
 function App() {
   const [applications, setApplications] = useState<Application[]>([]);

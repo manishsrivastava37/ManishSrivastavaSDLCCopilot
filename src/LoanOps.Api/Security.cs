@@ -3,10 +3,11 @@ using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
-public sealed class DemoAuthenticationHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+public sealed class DemoAuthenticationHandler(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder, IHostEnvironment environment) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+    if (!environment.IsDevelopment()) return Task.FromResult(AuthenticateResult.Fail("Development authentication is disabled outside Development."));
         var userId = Request.Headers["X-Demo-User"].FirstOrDefault();
         var tenantId = Request.Headers["X-Demo-Tenant"].FirstOrDefault();
         var roles = Request.Headers["X-Demo-Roles"].FirstOrDefault();

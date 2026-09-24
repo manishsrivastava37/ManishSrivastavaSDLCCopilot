@@ -40,8 +40,8 @@ public sealed class WorkflowFeatureStore
 
     public (CreditRecommendation? Item, string? Error) AddRecommendation(Guid applicationId, string recommendation, string rationale, IReadOnlyCollection<string> factors, string analystId)
     {
-        if (string.IsNullOrWhiteSpace(recommendation) || string.IsNullOrWhiteSpace(rationale) || string.IsNullOrWhiteSpace(analystId)) return (null, "Recommendation, rationale, and analyst are required.");
-        if (recommendation.Length > 100 || rationale.Length > 4000 || factors.Count == 0 || factors.Any(string.IsNullOrWhiteSpace) || factors.Any(factor => factor.Length > 500)) return (null, "Recommendation rationale and factors are invalid.");
+        if (string.IsNullOrWhiteSpace(recommendation) || string.IsNullOrWhiteSpace(rationale) || string.IsNullOrWhiteSpace(analystId) || analystId.Length > 100) return (null, "Recommendation, rationale, and analyst are required.");
+        if (recommendation.Length > 100 || rationale.Length > 4000 || factors is null || factors.Count == 0 || factors.Count > 20 || factors.Any(string.IsNullOrWhiteSpace) || factors.Any(factor => factor.Length > 500)) return (null, "Recommendation rationale and factors are invalid.");
         var item = new CreditRecommendation(Guid.NewGuid(), applicationId, recommendation, rationale, factors, analystId, DateTimeOffset.UtcNow);
         recommendations[item.Id] = item;
         return (item, null);
@@ -53,7 +53,7 @@ public sealed class WorkflowFeatureStore
         var application = applications.Get(applicationId);
         if (application is null) return (null, "Application not found.");
         if (!application.Status.Equals("PendingApproval", StringComparison.OrdinalIgnoreCase)) return (null, "The application must be pending approval before a decision can be recorded.");
-        if (string.IsNullOrWhiteSpace(decision) || string.IsNullOrWhiteSpace(rationale) || string.IsNullOrWhiteSpace(approverId)) return (null, "Decision, rationale, and approver are required.");
+        if (string.IsNullOrWhiteSpace(decision) || string.IsNullOrWhiteSpace(rationale) || string.IsNullOrWhiteSpace(approverId) || approverId.Length > 100) return (null, "Decision, rationale, and approver are required.");
         if (!new[] { "Approved", "Declined" }.Contains(decision, StringComparer.OrdinalIgnoreCase)) return (null, "Decision must be Approved or Declined.");
         if (rationale.Length > 4000) return (null, "Decision rationale is too long.");
         var recommendation = recommendations.Values.Where(item => item.ApplicationId == applicationId).OrderByDescending(item => item.CreatedAt).First();
@@ -68,7 +68,7 @@ public sealed class WorkflowFeatureStore
         var application = applications.Get(applicationId);
         if (application is null) return (null, "Application not found.");
         if (!RequiresSecondLevelVerification(applicationId)) return (null, "This application does not require second-level verification.");
-        if (!outcome.Equals("Verified", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(rationale) || string.IsNullOrWhiteSpace(verifierId)) return (null, "Verification outcome, rationale, and verifier are required.");
+        if (string.IsNullOrWhiteSpace(outcome) || !outcome.Equals("Verified", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(rationale) || rationale.Length > 4000 || string.IsNullOrWhiteSpace(verifierId) || verifierId.Length > 100) return (null, "Verification outcome, rationale, and verifier are required.");
         var recommendation = recommendations.Values.Where(item => item.ApplicationId == applicationId).OrderByDescending(item => item.CreatedAt).FirstOrDefault();
         if (recommendation is null) return (null, "A current credit recommendation is required before verification.");
         if (recommendation.AnalystId.Equals(verifierId, StringComparison.OrdinalIgnoreCase)) return (null, "The recommendation author cannot perform second-level verification.");
@@ -79,7 +79,7 @@ public sealed class WorkflowFeatureStore
 
     public (Collateral? Item, string? Error) AddCollateral(Guid applicationId, string type, string description, decimal value, string currency)
     {
-        if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(description) || string.IsNullOrWhiteSpace(currency)) return (null, "Collateral type, description, and currency are required.");
+        if (string.IsNullOrWhiteSpace(type) || type.Length > 100 || string.IsNullOrWhiteSpace(description) || description.Length > 1000 || string.IsNullOrWhiteSpace(currency)) return (null, "Collateral type, description, and currency are required.");
         if (value <= 0 || value > 1_000_000_000_000m || currency.Length != 3 || currency.Any(character => !char.IsLetter(character))) return (null, "Collateral value or currency is invalid.");
         var item = new Collateral(Guid.NewGuid(), applicationId, type, description, value, currency.ToUpperInvariant(), "Proposed", DateTimeOffset.UtcNow);
         collateral[item.Id] = item;
@@ -88,7 +88,7 @@ public sealed class WorkflowFeatureStore
 
     public (DocumentRecord? Item, string? Error) AddDocument(Guid applicationId, string category, string fileName)
     {
-        if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(fileName) || fileName.Length > 255 || fileName.Contains("..", StringComparison.Ordinal) || fileName.Contains('/') || fileName.Contains('\\')) return (null, "Document category or file name is invalid.");
+        if (string.IsNullOrWhiteSpace(category) || category.Length > 100 || string.IsNullOrWhiteSpace(fileName) || fileName.Length > 255 || fileName.Contains("..", StringComparison.Ordinal) || fileName.Contains('/') || fileName.Contains('\\')) return (null, "Document category or file name is invalid.");
         var item = new DocumentRecord(Guid.NewGuid(), applicationId, category, fileName, "Ready for Verification", null, DateTimeOffset.UtcNow);
         documents[item.Id] = item;
         return (item, null);
@@ -112,7 +112,7 @@ public sealed class WorkflowFeatureStore
     {
         var current = documents.GetValueOrDefault(id);
         if (current is null) return (null, "Document not found.");
-        if (string.IsNullOrWhiteSpace(reviewerId) || !new[] { "Verified", "Rejected", "Needs Review" }.Contains(verificationStatus, StringComparer.OrdinalIgnoreCase)) return (null, "Verification status and reviewer are required.");
+        if (string.IsNullOrWhiteSpace(verificationStatus) || string.IsNullOrWhiteSpace(reviewerId) || reviewerId.Length > 100 || !new[] { "Verified", "Rejected", "Needs Review" }.Contains(verificationStatus, StringComparer.OrdinalIgnoreCase)) return (null, "Verification status and reviewer are required.");
         if (verificationStatus.Equals("Rejected", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(findings)) return (null, "Findings are required when a document is rejected.");
         var statuses = new[] { "Verified", "Rejected", "Needs Review" };
         var updated = current with { VerificationStatus = statuses.First(status => status.Equals(verificationStatus, StringComparison.OrdinalIgnoreCase)), Findings = findings };

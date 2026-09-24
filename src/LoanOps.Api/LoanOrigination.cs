@@ -39,9 +39,9 @@ public sealed class LoanApplicationService(LoanApplicationStore store, WorkflowF
 
     public (LoanApplication? Application, string? Error) Create(CreateApplicationRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.TenantId) || string.IsNullOrWhiteSpace(request.BorrowerLegalName) || string.IsNullOrWhiteSpace(request.OwnerId)) return (null, "Required fields are missing.");
+        if (string.IsNullOrWhiteSpace(request.TenantId) || request.TenantId.Length > 100 || string.IsNullOrWhiteSpace(request.BorrowerLegalName) || request.BorrowerLegalName.Length > 250 || string.IsNullOrWhiteSpace(request.Purpose) || request.Purpose.Length > 500 || string.IsNullOrWhiteSpace(request.OwnerId)) return (null, "Required fields are missing or invalid.");
         if (request.RequestedAmount <= 0 || request.RequestedAmount > 1_000_000_000_000m) return (null, "Requested amount must be positive and within the supported range.");
-        if (request.Currency.Length != 3 || request.Currency.Any(character => !char.IsLetter(character))) return (null, "Currency must be a three-letter ISO code.");
+        if (string.IsNullOrWhiteSpace(request.Currency) || request.Currency.Length != 3 || request.Currency.Any(character => !char.IsLetter(character))) return (null, "Currency must be a three-letter ISO code.");
         return (store.Add(request), null);
     }
 
@@ -49,7 +49,7 @@ public sealed class LoanApplicationService(LoanApplicationStore store, WorkflowF
     {
         var current = store.Get(id);
         if (current is null) return (null, "Application not found.");
-        if (string.IsNullOrWhiteSpace(request.ActorId) || string.IsNullOrWhiteSpace(request.Reason)) return (null, "Actor and reason are required.");
+        if (string.IsNullOrWhiteSpace(request.TargetStatus) || request.TargetStatus.Length > 50 || string.IsNullOrWhiteSpace(request.ActorId) || request.ActorId.Length > 100 || string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 1000) return (null, "Actor, target status, and reason are required and bounded.");
         if (!AllowedTransitions.TryGetValue(current.Status, out var targets) || !targets.Contains(request.TargetStatus, StringComparer.OrdinalIgnoreCase)) return (null, "The requested lifecycle transition is not allowed.");
         if (request.TargetStatus.Equals("PendingApproval", StringComparison.OrdinalIgnoreCase) && features.RequiresSecondLevelVerification(id) && !features.HasSecondLevelVerification(id)) return (null, "Second-level credit verification is required before approval submission.");
         if ((request.TargetStatus.Equals("Approved", StringComparison.OrdinalIgnoreCase) || request.TargetStatus.Equals("Declined", StringComparison.OrdinalIgnoreCase)) && !features.HasDecision(id, request.TargetStatus)) return (null, "A recorded human credit decision is required before this transition.");
